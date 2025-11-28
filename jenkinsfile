@@ -1,32 +1,75 @@
-groovy
 pipeline {
     agent any
 
-    triggers {
-        githubPush()
-    }
-
     environment {
-        TARGET = "ubuntu@65.0.176.83"
+        REMOTE_USER = "ubuntu"
+        REMOTE_HOST = "13.204.64.149"
+        DEPLOY_PATH = "/var/www/html"
     }
 
     stages {
-        stage("Clone Repository") {
+
+        stage('Checkout Code') {
             steps {
-                git url: "https://github.com/aniketchougule108/static-website-project-terraform-jenkins.git", branch: "main"
+                git branch: 'main', url: 'https://github.com/aniketchougule108/static-website-project-terraform-jenkins.git'
             }
         }
 
-        stage("Deploy to EC2") {
+        stage('Prepare Remote Server') {
             steps {
-                sshagent(credentials: ['ec2-key']) {
-                    sh """
-                    ssh -o StrictHostKeyChecking=no $TARGET 'sudo rm -rf /var/www/html/*'
-                    ssh -o StrictHostKeyChecking=no $TARGET 'sudo git clone https://github.com/aniketchougule108/static-website-project-terraform-jenkins.git /var/www/html'
-                    ssh -o StrictHostKeyChecking=no $TARGET 'sudo systemctl restart apache2'
-                    """
+                withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-key', keyFileVariable: 'SSH_KEY')]) {
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${REMOTE_USER}@${REMOTE_HOST} "
+                            sudo apt-get update -y &&
+                            sudo apt-get install -y nginx &&
+                            sudo systemctl enable nginx &&
+                            sudo systemctl start nginx &&
+                            sudo mkdir -p ${DEPLOY_PATH}
+                        "
+                    '''
                 }
             }
+        }
+
+        stage('Upload Files') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-key', keyFileVariable: 'SSH_KEY')]) {
+                    sh '''
+                        scp -o StrictHostKeyChecking=no -i $SSH_KEY -r * ${REMOTE_USER}@${REMOTE_HOST}:${DEPLOY_PATH}/
+                    '''
+                }
+            }
+        }
+
+        stage('Set Permissions & Restart') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-key', keyFileVariable: 'SSH_KEY')]) {
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${REMOTE_USER}@${REMOTE_HOST} "
+                            sudo chown -R www-data:www-data ${DEPLOY_PATH} &&
+                            sudo chmod -R 755 ${DEPLOY_PATH} &&
+                            sudo systemctl restart nginx
+                        "
+                    '''
+                }
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                sh '''
+                    curl http://${REMOTE_HOST}
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Deployment Successful!"
+        }
+        failure {
+            echo "❌ Deployment Failed!"
         }
     }
 }
