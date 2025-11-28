@@ -20,12 +20,11 @@ pipeline {
 
     stage('Prepare EC2 Server') {
       steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: SSH_CREDENTIALS_ID,
-          keyFileVariable: 'SSH_KEY',
-          usernameVariable: 'SSH_USER'
-        )]) {
-
+        withCredentials([
+          sshUserPrivateKey(credentialsId: SSH_CREDENTIALS_ID,
+                            keyFileVariable: 'SSH_KEY',
+                            usernameVariable: 'SSH_USER')
+        ]) {
           sh """
             ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ${SSH_USER}@${DEPLOY_HOST} '
               sudo apt-get update -y
@@ -41,15 +40,16 @@ pipeline {
 
     stage('Upload Website Files') {
       steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: SSH_CREDENTIALS_ID,
-          keyFileVariable: 'SSH_KEY',
-          usernameVariable: 'SSH_USER'
-        )]) {
+        withCredentials([
+          sshUserPrivateKey(credentialsId: SSH_CREDENTIALS_ID,
+                            keyFileVariable: 'SSH_KEY',
+                            usernameVariable: 'SSH_USER')
+        ]) {
 
           sh """
-            echo "Uploading files to EC2..."
-            scp -o StrictHostKeyChecking=no -i "$SSH_KEY" -r * ${SSH_USER}@${DEPLOY_HOST}:/tmp/site-upload
+            echo "Uploading static website files..."
+            scp -o StrictHostKeyChecking=no -i "$SSH_KEY" \
+                -r static-web/* ${SSH_USER}@${DEPLOY_HOST}:/tmp/site-upload
           """
         }
       }
@@ -57,31 +57,33 @@ pipeline {
 
     stage('Deploy to Nginx') {
       steps {
-        withCredentials([sshUserPrivateKey(
-          credentialsId: SSH_CREDENTIALS_ID,
-          keyFileVariable: 'SSH_KEY',
-          usernameVariable: 'SSH_USER'
-        )]) {
+        withCredentials([
+          sshUserPrivateKey(credentialsId: SSH_CREDENTIALS_ID,
+                            keyFileVariable: 'SSH_KEY',
+                            usernameVariable: 'SSH_USER')
+        ]) {
 
           sh """
-            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ${SSH_USER}@${DEPLOY_HOST} "
+            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ${SSH_USER}@${DEPLOY_HOST} '
               sudo rm -rf ${DEPLOY_PATH}/*
+
               sudo mv /tmp/site-upload/* ${DEPLOY_PATH}/ || true
 
-              # Ensure homepage is "index.html"
-              for f in index.htm HomePage.html Homepage.html; do
-                if [ -f ${DEPLOY_PATH}/\\\$f ]; then
-                  sudo mv ${DEPLOY_PATH}/\\\$f ${DEPLOY_PATH}/index.html
+              # Convert homepage to index.html
+              for f in index.htm HomePage.html Homepage.html home.html; do
+                if [ -f ${DEPLOY_PATH}/$f ]; then
+                  sudo mv ${DEPLOY_PATH}/$f ${DEPLOY_PATH}/index.html
                 fi
               done
 
+              # Fix permissions
               sudo chown -R www-data:www-data ${DEPLOY_PATH}
               sudo find ${DEPLOY_PATH} -type d -exec chmod 755 {} \\;
               sudo find ${DEPLOY_PATH} -type f -exec chmod 644 {} \\;
 
               sudo systemctl restart nginx
-              echo 'DEPLOYMENT DONE'
-            "
+              echo "DEPLOYMENT DONE"
+            '
           """
         }
       }
@@ -89,7 +91,7 @@ pipeline {
 
     stage('Smoke Test') {
       steps {
-        sh "curl -I http://${DEPLOY_HOST} || true"
+        sh "curl -I http://${DEPLOY_HOST} | head -n 5 || true"
       }
     }
   }
@@ -99,7 +101,7 @@ pipeline {
       echo "✅ Deployment successful: http://${DEPLOY_HOST}"
     }
     failure {
-      echo "❌ Deployment failed — check logs"
+      echo "❌ Deployment failed — check console output"
     }
   }
 }
