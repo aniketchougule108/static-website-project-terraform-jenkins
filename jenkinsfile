@@ -2,74 +2,64 @@ pipeline {
     agent any
 
     environment {
-        REMOTE_USER = "ubuntu"
-        REMOTE_HOST = "13.204.64.149"
-        DEPLOY_PATH = "/var/www/html"
+        EC2_USER = "ubuntu"
+        EC2_HOST = "65.0.176.83"
+        KEY_ID   = "node-app-key"   // Updated key ID
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git branch: 'main', url: 'https://github.com/aniketchougule108/static-website-project-terraform-jenkins.git'
+                git branch: 'main',
+                    url: 'https://github.com/aniketchougule108/static-website-project-terraform-jenkins.git'
             }
         }
 
         stage('Prepare Remote Server') {
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-key', keyFileVariable: 'SSH_KEY')]) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${REMOTE_USER}@${REMOTE_HOST} "
-                            sudo apt-get update -y &&
-                            sudo apt-get install -y nginx &&
-                            sudo systemctl enable nginx &&
-                            sudo systemctl start nginx &&
-                            sudo mkdir -p ${DEPLOY_PATH}
-                        "
-                    '''
+                withCredentials([sshUserPrivateKey(credentialsId: "${KEY_ID}", keyFileVariable: 'SSH_KEY')]) {
+                    sh """
+                        echo "Testing SSH connection..."
+                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${EC2_USER}@${EC2_HOST} "echo Connected OK"
+                    """
                 }
             }
         }
 
         stage('Upload Files') {
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-key', keyFileVariable: 'SSH_KEY')]) {
-                    sh '''
-                        scp -o StrictHostKeyChecking=no -i $SSH_KEY -r * ${REMOTE_USER}@${REMOTE_HOST}:${DEPLOY_PATH}/
-                    '''
+                withCredentials([sshUserPrivateKey(credentialsId: "${KEY_ID}", keyFileVariable: 'SSH_KEY')]) {
+                    sh """
+                        echo "Uploading files..."
+                        rsync -avz -e "ssh -o StrictHostKeyChecking=no -i $SSH_KEY" ./ ${EC2_USER}@${EC2_HOST}:/var/www/html/
+                    """
                 }
             }
         }
 
         stage('Set Permissions & Restart') {
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: 'jenkins-key', keyFileVariable: 'SSH_KEY')]) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${REMOTE_USER}@${REMOTE_HOST} "
-                            sudo chown -R www-data:www-data ${DEPLOY_PATH} &&
-                            sudo chmod -R 755 ${DEPLOY_PATH} &&
+                withCredentials([sshUserPrivateKey(credentialsId: "${KEY_ID}", keyFileVariable: 'SSH_KEY')]) {
+                    sh """
+                        echo "Setting permissions..."
+                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${EC2_USER}@${EC2_HOST} "
+                            sudo chown -R www-data:www-data /var/www/html &&
+                            sudo chmod -R 755 /var/www/html &&
                             sudo systemctl restart nginx
                         "
-                    '''
+                    """
                 }
             }
         }
 
         stage('Smoke Test') {
             steps {
-                sh '''
-                    curl http://${REMOTE_HOST}
-                '''
+                sh "curl -I http://${EC2_HOST}"
             }
         }
     }
 
     post {
         success {
-            echo "✅ Deployment Successful!"
-        }
-        failure {
-            echo "❌ Deployment Failed!"
-        }
-    }
-}
+            echo "✅ Deployment Succ
