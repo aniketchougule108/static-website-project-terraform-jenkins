@@ -1,0 +1,14 @@
+variable "my_ami" {
+  default = "ami-03695d52f0d883f65"
+}
+
+variable "my_instance" {
+  default = "t2.micro"
+}
+
+variable "my_key" {
+  default = ""
+}
+variable "user_data" {
+   type = string
+}
