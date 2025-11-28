@@ -7,7 +7,7 @@ variable "my_instance" {
 }
 
 variable "my_key" {
-  default = ""
+  default = "Jenkins"
 }
 variable "user_data" {
    type = string
