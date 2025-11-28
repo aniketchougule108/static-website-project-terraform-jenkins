@@ -4,7 +4,7 @@ pipeline {
     environment {
         EC2_USER = "ubuntu"
         EC2_HOST = "65.0.176.83"
-        KEY_ID   = "node-app-key"   // Updated key ID
+        KEY_ID   = "node-app-key"
     }
 
     stages {
@@ -21,7 +21,7 @@ pipeline {
                 withCredentials([sshUserPrivateKey(credentialsId: "${KEY_ID}", keyFileVariable: 'SSH_KEY')]) {
                     sh """
                         echo "Testing SSH connection..."
-                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${EC2_USER}@${EC2_HOST} "echo Connected OK"
+                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${EC2_USER}@${EC2_HOST} "echo Connected"
                     """
                 }
             }
@@ -62,4 +62,10 @@ pipeline {
 
     post {
         success {
-            echo "✅ Deployment Succ
+            echo "Deployment Successful"
+        }
+        failure {
+            echo "Deployment Failed"
+        }
+    }
+}
