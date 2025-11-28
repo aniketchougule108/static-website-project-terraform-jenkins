@@ -4,7 +4,7 @@ pipeline {
   environment {
     DEPLOY_USER        = 'ubuntu'
     DEPLOY_HOST        = '3.110.154.247'
-    DEPLOY_PATH        = '/usr/share/nginx/html/'
+    DEPLOY_PATH        = '/usr/share/nginx/html'
     SSH_CREDENTIALS_ID = 'node-app-key'
     REPO_URL           = 'https://github.com/aniketchougule108/static-website-project-terraform-jenkins.git'
     BRANCH             = 'main'
@@ -47,7 +47,7 @@ pipeline {
         ]) {
           sh """
             echo "Uploading Website Files..."
-            scp -o StrictHostKeyChecking=no -i "$SSH_KEY" -r * ${SSH_USER}@${DEPLOY_HOST}:/tmp/deploy_payload
+            scp -o StrictHostKeyChecking=no -i "$SSH_KEY" -r static-web/* ${SSH_USER}@${DEPLOY_HOST}:/tmp/deploy_payload
           """
         }
       }
@@ -61,29 +61,31 @@ pipeline {
                             usernameVariable: 'SSH_USER')
         ]) {
           sh """
-            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ${SSH_USER}@${DEPLOY_HOST} "
+            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ${SSH_USER}@${DEPLOY_HOST} '
               set -e
-              DEPLOY_PATH='${DEPLOY_PATH}'
+              DEPLOY_PATH="${DEPLOY_PATH}"
 
-              sudo rm -rf \\\"\$DEPLOY_PATH\\\"/*
+              sudo rm -rf "$DEPLOY_PATH"/*
 
-              sudo mv /tmp/deploy_payload/* \\\"\$DEPLOY_PATH\\\"/ || true
+              sudo mv /tmp/deploy_payload/* "$DEPLOY_PATH"/
 
-              for f in index.htm HomePage.html Homepage.html home.html; do
-                if [ -f \\\"\$DEPLOY_PATH/\$f\\\" ]; then
-                  sudo mv \\\"\$DEPLOY_PATH/\$f\\\" \\\"\$DEPLOY_PATH/index.html\\\"
+              # Rename homepage file to index.html
+              for f in HomePage.html Homepage.html index.htm home.html; do
+                if [ -f "$DEPLOY_PATH/$f" ]; then
+                  sudo mv "$DEPLOY_PATH/$f" "$DEPLOY_PATH/index.html"
+                  break
                 fi
               done
 
-              sudo chown -R www-data:www-data \\\"\$DEPLOY_PATH\\\"
-              sudo find \\\"\$DEPLOY_PATH\\\" -type d -exec chmod 755 {} \\\\;
-              sudo find \\\"\$DEPLOY_PATH\\\" -type f -exec chmod 644 {} \\\\;
+              sudo chown -R www-data:www-data "$DEPLOY_PATH"
+              sudo find "$DEPLOY_PATH" -type d -exec chmod 755 {} \;
+              sudo find "$DEPLOY_PATH" -type f -exec chmod 644 {} \;
 
               sudo systemctl restart nginx
               sudo rm -rf /tmp/deploy_payload || true
 
               echo DEPLOYMENT_DONE
-            "
+            '
           """
         }
       }
