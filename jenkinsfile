@@ -2,70 +2,47 @@ pipeline {
     agent any
 
     environment {
-        EC2_USER = "ubuntu"
-        EC2_HOST = "65.0.176.83"
-        KEY_ID   = "node-app-key"
+        SSH_CRED = 'node-app-key'       // Jenkins SSH key credential ID
+        SERVER_IP = '65.0.176.83'       // EC2 Public IP
+        REMOTE_USER = 'ubuntu'
+        WEB_DIR = '/var/www/html/'   // Nginx web root
     }
 
     stages {
-
-        stage('Checkout Code') {
+        stage('Clone Repo') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/aniketchougule108/static-website-project-terraform-jenkins.git'
+                echo "📥 Pulling source code from GitHub..."
+                git url: 'https://github.com/aniketchougule108/static-website-project-terraform-jenkins.git', branch: 'main'
             }
         }
 
-        stage('Prepare Remote Server') {
+        stage('Deploy to Nginx Server') {
             steps {
-                withCredentials([sshUserPrivateKey(credentialsId: "${KEY_ID}", keyFileVariable: 'SSH_KEY')]) {
-                    sh """
-                        echo "Testing SSH connection..."
-                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${EC2_USER}@${EC2_HOST} "echo Connected"
-                    """
+                sshagent(credentials: ["${SSH_CRED}"]) {
+                    sh '''
+                        echo "🧹 Cleaning old website files..."
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${SERVER_IP} "sudo rm -rf ${WEB_DIR}/*"
+
+                        echo "📤 Uploading new website files to server..."
+                        scp -o StrictHostKeyChecking=no -r * ${REMOTE_USER}@${SERVER_IP}:/tmp/
+
+                        echo "📦 Moving website files to Nginx directory..."
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${SERVER_IP} "sudo cp -r /tmp/* ${WEB_DIR}/"
+
+                        echo "🔁 Restarting Nginx..."
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_USER}@${SERVER_IP} "sudo systemctl restart nginx"
+                    '''
                 }
-            }
-        }
-
-        stage('Upload Files') {
-            steps {
-                withCredentials([sshUserPrivateKey(credentialsId: "${KEY_ID}", keyFileVariable: 'SSH_KEY')]) {
-                    sh """
-                        echo "Uploading files..."
-                        rsync -avz -e "ssh -o StrictHostKeyChecking=no -i $SSH_KEY" ./ ${EC2_USER}@${EC2_HOST}:/var/www/html/
-                    """
-                }
-            }
-        }
-
-        stage('Set Permissions & Restart') {
-            steps {
-                withCredentials([sshUserPrivateKey(credentialsId: "${KEY_ID}", keyFileVariable: 'SSH_KEY')]) {
-                    sh """
-                        echo "Setting permissions..."
-                        ssh -o StrictHostKeyChecking=no -i $SSH_KEY ${EC2_USER}@${EC2_HOST} "
-                            sudo chown -R www-data:www-data /var/www/html &&
-                            sudo chmod -R 755 /var/www/html &&
-                            sudo systemctl restart nginx
-                        "
-                    """
-                }
-            }
-        }
-
-        stage('Smoke Test') {
-            steps {
-                sh "curl -I http://${EC2_HOST}"
             }
         }
     }
 
     post {
         success {
-            echo "Deployment Successful"
+            echo "🚀 Deployment Successful! Website Live: http://${SERVER_IP}"
         }
         failure {
-            echo "Deployment Failed"
+            echo "❌ Deployment Failed — check Jenkins console output."
         }
     }
 }
